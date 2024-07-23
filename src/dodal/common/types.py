@@ -5,7 +5,7 @@ from typing import (
 )
 
 from bluesky.utils import Msg
-from ophyd_async.core import DirectoryProvider
+from ophyd_async.core import PathProvider
 
 # String identifier used by 'wait' or stubs that await
 Group = str
