@@ -125,14 +125,14 @@ def device_instantiation(
 
 
 def set_directory_provider(provider: UpdatingDirectoryProvider):
-    global DIRECTORY_PROVIDER
+    global PATH_PROVIDER
 
-    DIRECTORY_PROVIDER = provider
+    PATH_PROVIDER = provider
 
 
 def get_directory_provider() -> UpdatingDirectoryProvider:
-    if DIRECTORY_PROVIDER is None:
+    if PATH_PROVIDER is None:
         raise ValueError(
             "DirectoryProvider has not been set! Ophyd-async StandardDetectors will not be able to write!"
         )
-    return DIRECTORY_PROVIDER
+    return PATH_PROVIDER

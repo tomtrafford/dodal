@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Optional
 
 from aiohttp import ClientSession
-from ophyd_async.core import DirectoryInfo
+from ophyd_async.core import PathInfo
 from pydantic import BaseModel
 
 from dodal.common.types import UpdatingDirectoryProvider
@@ -98,7 +98,7 @@ class StaticVisitDirectoryProvider(UpdatingDirectoryProvider):
     _beamline: str
     _root: Path
     _client: DirectoryServiceClientBase
-    _current_collection: DirectoryInfo | None
+    _current_collection: PathInfo | None
     _session: ClientSession | None
 
     def __init__(
@@ -134,9 +134,9 @@ class StaticVisitDirectoryProvider(UpdatingDirectoryProvider):
     def _generate_directory_info(
         self,
         collection_id_info: DataCollectionIdentifier,
-    ) -> DirectoryInfo:
-        return DirectoryInfo(
-            # See DocString of DirectoryInfo. At DLS, root = visit directory, resource_dir is relative to it.
+    ) -> PathInfo:
+        return PathInfo(
+            # See DocString of PathInfo. At DLS, root = visit directory, resource_dir is relative to it.
             root=self._root,
             # https://github.com/DiamondLightSource/dodal/issues/452
             # Currently all h5 files written to visit/ directory, as no guarantee that visit/dataCollection/ directory will have been produced. If it is as part of #452, append the resource_dir
@@ -145,7 +145,7 @@ class StaticVisitDirectoryProvider(UpdatingDirectoryProvider):
             prefix=f"{self._beamline}-{collection_id_info.collectionNumber}-",
         )
 
-    def __call__(self) -> DirectoryInfo:
+    def __call__(self) -> PathInfo:
         if self._current_collection is not None:
             return self._current_collection
         else:

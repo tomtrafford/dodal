@@ -60,7 +60,7 @@ def det(
         fake_with_ophyd_sim,
         drv_suffix="DET:",
         hdf_suffix="HDF5:",
-        directory_provider=get_directory_provider(),
+        path_provider=get_directory_provider(),
     )
 
 
@@ -77,7 +77,7 @@ def diff(
         fake_with_ophyd_sim,
         drv_suffix="DET:",
         hdf_suffix="HDF5:",
-        directory_provider=get_directory_provider(),
+        path_provider=get_directory_provider(),
     )
 
 
@@ -95,7 +95,7 @@ def panda1(
         "-MO-PANDA-01:",
         wait_for_connection,
         fake_with_ophyd_sim,
-        directory_provider=get_directory_provider(),
+        path_provider=get_directory_provider(),
     )
 
 
@@ -110,5 +110,5 @@ def panda2(
         "-MO-PANDA-02:",
         wait_for_connection,
         fake_with_ophyd_sim,
-        directory_provider=get_directory_provider(),
+        path_provider=get_directory_provider(),
     )
