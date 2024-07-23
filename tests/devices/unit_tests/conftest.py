@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from ophyd.epics_motor import EpicsMotor
 from ophyd.status import Status
-from ophyd_async.core import DirectoryInfo, DirectoryProvider, StaticDirectoryProvider
+from ophyd_async.core import DirectoryInfo, PathProvider, StaticPathProvider
 
 from dodal.devices.util.motor_utils import ExtendedEpicsMotor
 
@@ -33,5 +33,5 @@ DIRECTORY_INFO_FOR_TESTING: DirectoryInfo = DirectoryInfo(
 
 
 @pytest.fixture
-def static_directory_provider(tmp_path: Path) -> DirectoryProvider:
-    return StaticDirectoryProvider(tmp_path)
+def static_directory_provider(tmp_path: Path) -> PathProvider:
+    return StaticPathProvider(tmp_path)

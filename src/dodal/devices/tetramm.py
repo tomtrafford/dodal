@@ -8,7 +8,7 @@ from ophyd_async.core import (
     DetectorControl,
     DetectorTrigger,
     Device,
-    DirectoryProvider,
+    PathProvider,
     ShapeProvider,
     StandardDetector,
     set_and_wait_for_value,
@@ -211,7 +211,7 @@ class TetrammDetector(StandardDetector):
     def __init__(
         self,
         prefix: str,
-        directory_provider: DirectoryProvider,
+        directory_provider: PathProvider,
         name: str,
         **scalar_sigs: str,
     ) -> None:

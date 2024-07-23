@@ -3,7 +3,7 @@ from bluesky.run_engine import RunEngine
 from ophyd_async.core import (
     DetectorTrigger,
     DeviceCollector,
-    DirectoryProvider,
+    PathProvider,
     set_sim_value,
 )
 from ophyd_async.core.detector import TriggerInfo
@@ -41,7 +41,7 @@ async def tetramm_controller(
 
 
 @pytest.fixture
-async def tetramm(static_directory_provider: DirectoryProvider) -> TetrammDetector:
+async def tetramm(static_directory_provider: PathProvider) -> TetrammDetector:
     async with DeviceCollector(sim=True):
         tetramm = TetrammDetector(
             "MY-TETRAMM:",
