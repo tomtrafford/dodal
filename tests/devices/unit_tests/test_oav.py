@@ -2,7 +2,6 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import numpy as np
 import pytest
-from bluesky import plan_stubs as bps
 from bluesky.run_engine import RunEngine
 from ophyd.sim import instantiate_fake_device, make_fake_device
 from ophyd_async.core import set_mock_value
@@ -50,6 +49,15 @@ def fake_oav() -> OAV:
     return fake_oav
 
 
+@pytest.fixture
+def mock_get_with_valid_response():
+    patcher = patch("requests.get")
+    mock_get = patcher.start()
+    mock_get.return_value.content = b""
+    yield mock_get
+    patcher.stop()
+
+
 @patch("requests.get")
 def test_snapshot_trigger_handles_request_with_bad_status_code_correctly(
     mock_get, fake_oav: OAV
@@ -63,22 +71,20 @@ def test_snapshot_trigger_handles_request_with_bad_status_code_correctly(
         st.wait()
 
 
-@patch("requests.get")
 @patch("dodal.devices.areadetector.plugins.MJPG.Image")
 @patch("dodal.devices.areadetector.plugins.MJPG.os", new=MagicMock())
 def test_snapshot_trigger_loads_correct_url(
-    mock_image: MagicMock, mock_get: MagicMock, fake_oav: OAV
+    mock_image: MagicMock, mock_get_with_valid_response: MagicMock, fake_oav: OAV
 ):
     st = fake_oav.grid_snapshot.trigger()
     st.wait()
-    mock_get.assert_called_once_with("http://test.url", stream=True)
+    mock_get_with_valid_response.assert_called_once_with("http://test.url", stream=True)
 
 
-@patch("requests.get")
 @patch("dodal.devices.areadetector.plugins.MJPG.Image.open")
 @patch("dodal.devices.areadetector.plugins.MJPG.os", new=MagicMock())
 def test_snapshot_trigger_saves_to_correct_file(
-    mock_open: MagicMock, mock_get, fake_oav
+    mock_open: MagicMock, mock_get_with_valid_response, fake_oav
 ):
     image = Image.open("test")
     mock_open.return_value.__enter__.return_value = image
@@ -87,22 +93,16 @@ def test_snapshot_trigger_saves_to_correct_file(
         st.wait()
         expected_calls_to_save = [
             call(f"test directory/test filename{addition}.png")
-            for addition in [
-                "",
-                "t",
-                "_outer_overlay",
-                "_grid_overlay",
-            ]
+            for addition in ["", "_outer_overlay", "_grid_overlay"]
         ]
         calls_to_save = mock_save.mock_calls
         assert calls_to_save == expected_calls_to_save
 
 
-@patch("requests.get")
 @patch("dodal.devices.areadetector.plugins.MJPG.Image.open")
 @patch("dodal.devices.areadetector.plugins.MJPG.os")
 def test_given_directory_not_existing_when_snapshot_triggered_then_directory_created(
-    mock_os, mock_open: MagicMock, mock_get, fake_oav
+    mock_os, mock_open: MagicMock, mock_get_with_valid_response, fake_oav
 ):
     mock_os.path.isdir.return_value = False
     st = fake_oav.grid_snapshot.trigger()
@@ -110,11 +110,10 @@ def test_given_directory_not_existing_when_snapshot_triggered_then_directory_cre
     mock_os.mkdir.assert_called_once_with("test directory")
 
 
-@patch("requests.get")
 @patch("dodal.devices.areadetector.plugins.MJPG.Image.open")
 @patch("dodal.devices.areadetector.plugins.MJPG.os", new=MagicMock())
 def test_snapshot_trigger_applies_current_microns_per_pixel_to_snapshot(
-    mock_open: MagicMock, mock_get, fake_oav
+    mock_open: MagicMock, mock_get_with_valid_response, fake_oav
 ):
     image = Image.open("test")  # type: ignore
     mock_open.return_value.__enter__.return_value = image
@@ -128,7 +127,6 @@ def test_snapshot_trigger_applies_current_microns_per_pixel_to_snapshot(
         assert fake_oav.grid_snapshot.microns_per_pixel_y.get() == expected_mpp_y
 
 
-@patch("requests.get")
 @patch("dodal.devices.areadetector.plugins.MJPG.Image.open")
 @patch("dodal.devices.oav.grid_overlay.add_grid_overlay_to_image")
 @patch("dodal.devices.oav.grid_overlay.add_grid_border_overlay_to_image")
@@ -137,7 +135,7 @@ def test_correct_grid_drawn_on_image(
     mock_border_overlay: MagicMock,
     mock_grid_overlay: MagicMock,
     mock_open: MagicMock,
-    mock_get: MagicMock,
+    mock_get_with_valid_response: MagicMock,
     fake_oav: OAV,
 ):
     st = fake_oav.grid_snapshot.trigger()
@@ -164,27 +162,6 @@ def test_bottom_right_from_top_left():
         top_left, 15, 20, 0.005, 0.007, 1, 1
     )
     assert bottom_right[0] == 198 and bottom_right[1] == 263
-
-
-def test_when_zoom_1_then_flat_field_applied(fake_oav: OAV, RE: RunEngine):
-    RE(bps.abs_set(fake_oav.zoom_controller, "1.0x"))
-    assert fake_oav.grid_snapshot.input_plugin.get() == "PROC"
-
-
-def test_when_zoom_not_1_then_flat_field_removed(fake_oav: OAV, RE: RunEngine):
-    RE(bps.abs_set(fake_oav.zoom_controller, "10.0x"))
-    assert fake_oav.grid_snapshot.input_plugin.get() == "CAM"
-
-
-def test_when_zoom_is_externally_changed_to_1_then_flat_field_not_changed(
-    fake_oav: OAV,
-):
-    """This test is required to ensure that Hyperion doesn't cause unexpected behaviour
-    e.g. change the flatfield when the zoom level is changed through the synoptic"""
-    fake_oav.grid_snapshot.input_plugin.sim_put("CAM")  # type: ignore
-
-    fake_oav.zoom_controller.level.sim_put("1.0x")  # type: ignore
-    assert fake_oav.grid_snapshot.input_plugin.get() == "CAM"
 
 
 def test_get_beam_position_from_zoom_only_called_once_on_multiple_connects(
@@ -248,7 +225,7 @@ def test_values_for_move_so_that_beam_is_at_pixel(
         get_move_required_so_that_beam_is_at_pixel(
             smargon, pixel_to_move_to, fake_oav.parameters
         )
-    ).plan_result
+    ).plan_result  # type: ignore
 
     assert pos == pytest.approx(expected_xyz)
 

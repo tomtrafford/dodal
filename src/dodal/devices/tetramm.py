@@ -1,23 +1,24 @@
 import asyncio
 from enum import Enum
-from typing import Sequence
 
 from bluesky.protocols import Hints
 from ophyd_async.core import (
-    AsyncStatus,
+    DatasetDescriber,
     DetectorControl,
     DetectorTrigger,
     Device,
-    DirectoryProvider,
-    ShapeProvider,
+    PathProvider,
     StandardDetector,
+    TriggerInfo,
     set_and_wait_for_value,
     soft_signal_r_and_setter,
 )
-from ophyd_async.epics.areadetector.utils import stop_busy_record
-from ophyd_async.epics.areadetector.writers import HDFWriter, NDFileHDF
-from ophyd_async.epics.signal import epics_signal_r, epics_signal_rw
-from ophyd_async.epics.signal.signal import epics_signal_rw_rbv
+from ophyd_async.epics.adcore import ADHDFWriter, NDFileHDFIO, stop_busy_record
+from ophyd_async.epics.signal import (
+    epics_signal_r,
+    epics_signal_rw,
+    epics_signal_rw_rbv,
+)
 
 
 class TetrammRange(str, Enum):
@@ -108,33 +109,28 @@ class TetrammController(DetectorControl):
         self.minimum_values_per_reading = minimum_values_per_reading
         self.readings_per_frame = readings_per_frame
 
-    def get_deadtime(self, exposure: float) -> float:
+    def get_deadtime(self, exposure: float | None) -> float:
         # 2 internal clock cycles. Best effort approximation
         return 2 / self.base_sample_rate
 
-    async def arm(
-        self,
-        num: int,
-        trigger: DetectorTrigger,
-        exposure: float | None = None,
-    ) -> AsyncStatus:
-        if exposure is None:
-            raise ValueError(
-                "Tetramm does not support arm without exposure time. "
-                "Is this a software scan? Tetramm only supports hardware scans."
-            )
-        self._validate_trigger(trigger)
+    async def prepare(self, trigger_info: TriggerInfo):
+        self._validate_trigger(trigger_info.trigger)
+        assert trigger_info.livetime is not None
 
         # trigger mode must be set first and on its own!
         await self._drv.trigger_mode.set(TetrammTrigger.ExtTrigger)
 
         await asyncio.gather(
-            self._drv.averaging_time.set(exposure), self.set_exposure(exposure)
+            self._drv.averaging_time.set(trigger_info.livetime),
+            self.set_exposure(trigger_info.livetime),
         )
 
-        status = await set_and_wait_for_value(self._drv.acquire, 1)
+    async def arm(self):
+        self._arm_status = await set_and_wait_for_value(self._drv.acquire, True)
 
-        return status
+    async def wait_for_idle(self):
+        if self._arm_status:
+            await self._arm_status
 
     def _validate_trigger(self, trigger: DetectorTrigger) -> None:
         supported_trigger_types = {
@@ -150,7 +146,7 @@ class TetrammController(DetectorControl):
             )
 
     async def disarm(self):
-        await stop_busy_record(self._drv.acquire, 0, timeout=1)
+        await stop_busy_record(self._drv.acquire, False, timeout=1)
 
     async def set_exposure(self, exposure: float):
         """Tries to set the exposure time of a single frame.
@@ -204,14 +200,17 @@ class TetrammController(DetectorControl):
         )
 
 
-class TetrammShapeProvider(ShapeProvider):
+class TetrammDatasetDescriber(DatasetDescriber):
     max_channels = 11
 
     def __init__(self, controller: TetrammController) -> None:
         self.controller = controller
 
-    async def __call__(self) -> Sequence[int]:
-        return [self.max_channels, self.controller.readings_per_frame]
+    async def np_datatype(self) -> str:
+        return "<f8"  # IEEE 754 double precision floating point
+
+    async def shape(self) -> tuple[int, int]:
+        return (self.max_channels, self.controller.readings_per_frame)
 
 
 # TODO: Support MeanValue signals https://github.com/DiamondLightSource/dodal/issues/337
@@ -219,13 +218,13 @@ class TetrammDetector(StandardDetector):
     def __init__(
         self,
         prefix: str,
-        directory_provider: DirectoryProvider,
+        path_provider: PathProvider,
         name: str,
         type: str | None = None,
         **scalar_sigs: str,
     ) -> None:
         self.drv = TetrammDriver(prefix + "DRV:")
-        self.hdf = NDFileHDF(prefix + "HDF5:")
+        self.hdf = NDFileHDFIO(prefix + "HDF5:")
         controller = TetrammController(self.drv)
         config_signals = [
             self.drv.values_per_reading,
@@ -239,11 +238,11 @@ class TetrammDetector(StandardDetector):
             self.type = None
         super().__init__(
             controller,
-            HDFWriter(
+            ADHDFWriter(
                 self.hdf,
-                directory_provider,
+                path_provider,
                 lambda: self.name,
-                TetrammShapeProvider(controller),
+                TetrammDatasetDescriber(controller),
                 **scalar_sigs,
             ),
             config_signals,

@@ -1,13 +1,15 @@
-from ophyd_async.epics.areadetector import AravisDetector
-from ophyd_async.panda import HDFPanda
+from pathlib import Path
+
+from ophyd_async.epics.adaravis import AravisDetector
+from ophyd_async.fastcs.panda import HDFPanda
 
 from dodal.common.beamlines.beamline_utils import (
     device_instantiation,
-    get_directory_provider,
-    set_directory_provider,
+    get_path_provider,
+    set_path_provider,
 )
 from dodal.common.beamlines.beamline_utils import set_beamline as set_utils_beamline
-from dodal.common.visit import StaticVisitDirectoryProvider
+from dodal.common.visit import StaticVisitPathProvider
 from dodal.devices.p45 import Choppers, TomoStageWithStretchAndSkew
 from dodal.log import set_beamline as set_log_beamline
 from dodal.utils import get_beamline_name, skip_device
@@ -15,10 +17,10 @@ from dodal.utils import get_beamline_name, skip_device
 BL = get_beamline_name("p45")
 set_log_beamline(BL)
 set_utils_beamline(BL)
-set_directory_provider(
-    StaticVisitDirectoryProvider(
+set_path_provider(
+    StaticVisitPathProvider(
         BL,
-        "/data/2024/cm37283-2/",  # latest commissioning visit
+        Path("/data/2024/cm37283-2/"),  # latest commissioning visit
     )
 )
 
@@ -60,7 +62,7 @@ def det(
         fake_with_ophyd_sim,
         drv_suffix="DET:",
         hdf_suffix="HDF5:",
-        path_provider=get_directory_provider(),
+        path_provider=get_path_provider(),
     )
 
 
@@ -77,7 +79,7 @@ def diff(
         fake_with_ophyd_sim,
         drv_suffix="DET:",
         hdf_suffix="HDF5:",
-        path_provider=get_directory_provider(),
+        path_provider=get_path_provider(),
     )
 
 
@@ -95,7 +97,7 @@ def panda1(
         "-MO-PANDA-01:",
         wait_for_connection,
         fake_with_ophyd_sim,
-        path_provider=get_directory_provider(),
+        path_provider=get_path_provider(),
     )
 
 
@@ -110,5 +112,5 @@ def panda2(
         "-MO-PANDA-02:",
         wait_for_connection,
         fake_with_ophyd_sim,
-        path_provider=get_directory_provider(),
+        path_provider=get_path_provider(),
     )

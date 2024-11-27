@@ -1,13 +1,13 @@
-from collections.abc import Generator
+from collections.abc import Collection, Generator
 from dataclasses import dataclass
 from enum import Enum
 from math import isclose
-from typing import Collection, cast
+from typing import cast
 
 from bluesky import plan_stubs as bps
 from bluesky.utils import Msg
 from ophyd_async.core import AsyncStatus, Device, StandardReadable, wait_for_value
-from ophyd_async.epics.motion import Motor
+from ophyd_async.epics.motor import Motor
 from ophyd_async.epics.signal import epics_signal_r
 
 from dodal.devices.util.epics_util import SetWhenEnabled
@@ -87,7 +87,7 @@ class XYZLimits:
     def position_valid(self, pos: Collection[float]) -> bool:
         return all(
             axis_limits.contains(value)
-            for axis_limits, value in zip([self.x, self.y, self.z], pos)
+            for axis_limits, value in zip([self.x, self.y, self.z], pos, strict=False)
         )
 
 

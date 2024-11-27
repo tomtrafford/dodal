@@ -6,29 +6,51 @@ from logging import Logger, StreamHandler
 from logging.handlers import TimedRotatingFileHandler
 from os import environ
 from pathlib import Path
-from typing import Deque, Tuple, TypedDict
+from typing import TypedDict
 
+import colorlog
 from bluesky.log import logger as bluesky_logger
 from graypy import GELFTCPHandler
 from ophyd.log import logger as ophyd_logger
-from ophyd_async.log import (
-    DEFAULT_DATE_FORMAT,
-    DEFAULT_FORMAT,
-    DEFAULT_LOG_COLORS,
-    ColoredFormatterWithDeviceName,
-)
-from ophyd_async.log import logger as ophyd_async_logger
 
 LOGGER = logging.getLogger("Dodal")
+# Temporarily duplicated https://github.com/bluesky/ophyd-async/issues/550
+ophyd_async_logger = logging.getLogger("ophyd_async")
 LOGGER.setLevel(logging.DEBUG)
 
-DEFAULT_FORMATTER = ColoredFormatterWithDeviceName(
-    fmt=DEFAULT_FORMAT, datefmt=DEFAULT_DATE_FORMAT, log_colors=DEFAULT_LOG_COLORS
-)
 ERROR_LOG_BUFFER_LINES = 20000
 INFO_LOG_DAYS = 30
 DEBUG_LOG_FILES_TO_KEEP = 7
 DEFAULT_GRAYLOG_PORT = 12231
+
+# Temporarily duplicated https://github.com/bluesky/ophyd-async/issues/550
+DEFAULT_FORMAT = (
+    "%(log_color)s[%(levelname)1.1s %(asctime)s.%(msecs)03d "
+    "%(module)s:%(lineno)d] %(message)s"
+)
+
+DEFAULT_DATE_FORMAT = "%y%m%d %H:%M:%S"
+
+DEFAULT_LOG_COLORS = {
+    "DEBUG": "cyan",
+    "INFO": "green",
+    "WARNING": "yellow",
+    "ERROR": "red",
+    "CRITICAL": "red,bg_white",
+}
+
+
+class ColoredFormatterWithDeviceName(colorlog.ColoredFormatter):
+    def format(self, record):
+        message = super().format(record)
+        if device_name := getattr(record, "ophyd_async_device_name", None):
+            message = f"[{device_name}]{message}"
+        return message
+
+
+DEFAULT_FORMATTER = ColoredFormatterWithDeviceName(
+    fmt=DEFAULT_FORMAT, datefmt=DEFAULT_DATE_FORMAT, log_colors=DEFAULT_LOG_COLORS
+)
 
 
 class CircularMemoryHandler(logging.Handler):
@@ -37,11 +59,14 @@ class CircularMemoryHandler(logging.Handler):
     that always contains the last {capacity} number of messages, this is only flushed
     when a log of specific {flushLevel} comes in. On flush this buffer is then passed to
     the {target} handler.
+
+    The CircularMemoryHandler becomes the owner of the target handler which will be closed
+    on close of this handler.
     """
 
     def __init__(self, capacity, flushLevel=logging.ERROR, target=None):
         logging.Handler.__init__(self)
-        self.buffer: Deque[logging.LogRecord] = deque(maxlen=capacity)
+        self.buffer: deque[logging.LogRecord] = deque(maxlen=capacity)
         self.flushLevel = flushLevel
         self.target = target
 
@@ -66,6 +91,12 @@ class CircularMemoryHandler(logging.Handler):
         self.acquire()
         try:
             self.buffer.clear()
+            if self.target:
+                self.target.acquire()
+                try:
+                    self.target.close()
+                finally:
+                    self.target.release()
             self.target = None
             logging.Handler.close(self)
         finally:
@@ -121,7 +152,7 @@ def set_up_graylog_handler(logger: Logger, host: str, port: int):
 def set_up_INFO_file_handler(logger, path: Path, filename: str):
     """Set up a file handler for the logger, at INFO level, which will keep 30 days
     of logs, rotating once per day. Creates the directory if necessary."""
-    print(f"Logging to {path/filename}")
+    print(f"Logging to INFO file handler {path/filename}")
     path.mkdir(parents=True, exist_ok=True)
     file_handler = TimedRotatingFileHandler(
         filename=path / filename, when="MIDNIGHT", backupCount=INFO_LOG_DAYS
@@ -137,8 +168,8 @@ def set_up_DEBUG_memory_handler(
     """Set up a Memory handler which holds 200k lines, and writes them to an hourly
     log file when it sees a message of severity ERROR. Creates the directory if
     necessary"""
-    print(f"Logging to {path/filename}")
     debug_path = path / "debug"
+    print(f"Logging to DEBUG handler {debug_path/filename}")
     debug_path.mkdir(parents=True, exist_ok=True)
     file_handler = TimedRotatingFileHandler(
         filename=debug_path / filename, when="H", backupCount=DEBUG_LOG_FILES_TO_KEEP
@@ -240,7 +271,7 @@ def get_logging_file_path() -> Path:
 
 def get_graylog_configuration(
     dev_mode: bool, graylog_port: int | None = None
-) -> Tuple[str, int]:
+) -> tuple[str, int]:
     """Get the host and port for the graylog handler.
 
     If running in dev mode, this switches to localhost. Otherwise it publishes to the

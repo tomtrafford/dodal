@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Generator
 from typing import (
     Any,
-    Callable,
-    Generator,
 )
 
 from bluesky.utils import Msg
@@ -16,6 +15,8 @@ MsgGenerator = Generator[Msg, Any, None]
 PlanGenerator = Callable[..., MsgGenerator]
 
 
-class UpdatingDirectoryProvider(PathProvider, ABC):
+class UpdatingPathProvider(PathProvider, ABC):
     @abstractmethod
-    def update(self, **kwargs) -> None: ...
+    async def data_session(self) -> str: ...
+    @abstractmethod
+    async def update(self, **kwargs) -> None: ...

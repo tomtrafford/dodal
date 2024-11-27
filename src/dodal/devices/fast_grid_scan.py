@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
 
 import numpy as np
 from bluesky.plan_stubs import mv
+from bluesky.protocols import Flyable
 from numpy import ndarray
 from ophyd_async.core import (
     AsyncStatus,
@@ -20,7 +21,7 @@ from ophyd_async.epics.signal import (
     epics_signal_rw_rbv,
     epics_signal_x,
 )
-from pydantic import validator
+from pydantic import field_validator
 from pydantic.dataclasses import dataclass
 
 from dodal.log import LOGGER
@@ -69,9 +70,6 @@ class GridScanParamsCommon(AbstractExperimentWithBeamParams):
     y2_start: float = 0.1
     z1_start: float = 0.1
     z2_start: float = 0.1
-    x_axis: GridAxis = GridAxis(0, 0, 0)
-    y_axis: GridAxis = GridAxis(0, 0, 0)
-    z_axis: GridAxis = GridAxis(0, 0, 0)
 
     # Whether to set the stub offsets after centering
     set_stub_offsets: bool = False
@@ -91,28 +89,20 @@ class GridScanParamsCommon(AbstractExperimentWithBeamParams):
             "z2_start": self.z2_start,
         }
 
-    class Config:
-        arbitrary_types_allowed = True
-        fields = {
-            "x_axis": {"exclude": True},
-            "y_axis": {"exclude": True},
-            "z_axis": {"exclude": True},
-        }
+    @property
+    def x_axis(self) -> GridAxis:
+        return GridAxis(self.x_start, self.x_step_size, self.x_steps)
 
-    @validator("x_axis", always=True)
-    def _get_x_axis(cls, x_axis: GridAxis, values: dict[str, Any]) -> GridAxis:
-        return GridAxis(values["x_start"], values["x_step_size"], values["x_steps"])
+    @property
+    def y_axis(self) -> GridAxis:
+        return GridAxis(self.y1_start, self.y_step_size, self.y_steps)
 
-    @validator("y_axis", always=True)
-    def _get_y_axis(cls, y_axis: GridAxis, values: dict[str, Any]) -> GridAxis:
-        return GridAxis(values["y1_start"], values["y_step_size"], values["y_steps"])
-
-    @validator("z_axis", always=True)
-    def _get_z_axis(cls, z_axis: GridAxis, values: dict[str, Any]) -> GridAxis:
-        return GridAxis(values["z2_start"], values["z_step_size"], values["z_steps"])
+    @property
+    def z_axis(self) -> GridAxis:
+        return GridAxis(self.z2_start, self.z_step_size, self.z_steps)
 
     def get_num_images(self):
-        return self.x_steps * self.y_steps + self.x_steps * self.z_steps
+        return self.x_steps * (self.y_steps + self.z_steps)
 
     @property
     def is_3d_grid_scan(self):
@@ -126,7 +116,7 @@ class GridScanParamsCommon(AbstractExperimentWithBeamParams):
         :return: The motor position this corresponds to.
         :raises: IndexError if the desired position is outside the grid."""
         for position, axis in zip(
-            grid_position, [self.x_axis, self.y_axis, self.z_axis]
+            grid_position, [self.x_axis, self.y_axis, self.z_axis], strict=False
         ):
             if not axis.is_within(position):
                 raise IndexError(f"{grid_position} is outside the bounds of the grid")
@@ -155,7 +145,8 @@ class ZebraGridScanParams(GridScanParamsCommon):
         param_positions["dwell_time_ms"] = self.dwell_time_ms
         return param_positions
 
-    @validator("dwell_time_ms", always=True, check_fields=True)
+    @field_validator("dwell_time_ms")
+    @classmethod
     def non_integer_dwell_time(cls, dwell_time_ms: float) -> float:
         dwell_time_floor_rounded = np.floor(dwell_time_ms)
         dwell_time_is_close = np.isclose(
@@ -191,9 +182,10 @@ class MotionProgram(Device):
 class ExpectedImages(SignalR[int]):
     def __init__(self, parent: "FastGridScanCommon") -> None:
         super().__init__(SoftSignalBackend(int))
-        self.parent: "FastGridScanCommon" = parent
+        self.parent = parent
 
-    async def get_value(self):
+    async def get_value(self, cached: bool | None = None):
+        assert isinstance(self.parent, FastGridScanCommon)
         x = await self.parent.x_steps.get_value()
         y = await self.parent.y_steps.get_value()
         z = await self.parent.z_steps.get_value()
@@ -202,7 +194,7 @@ class ExpectedImages(SignalR[int]):
         return first_grid + second_grid
 
 
-class FastGridScanCommon(StandardReadable, ABC, Generic[ParamType]):
+class FastGridScanCommon(StandardReadable, Flyable, ABC, Generic[ParamType]):
     """Device for a general fast grid scan
 
     When the motion program is started, the goniometer will move in a snake-like grid trajectory,

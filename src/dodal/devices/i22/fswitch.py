@@ -1,11 +1,15 @@
 import asyncio
 import time
 from enum import Enum
-from typing import Dict
 
-from bluesky.protocols import DataKey, Reading
-from ophyd_async.core import ConfigSignal, StandardReadable, soft_signal_r_and_setter
-from ophyd_async.core.device import DeviceVector
+from bluesky.protocols import Reading
+from event_model import DataKey
+from ophyd_async.core import (
+    ConfigSignal,
+    DeviceVector,
+    StandardReadable,
+    soft_signal_r_and_setter,
+)
 from ophyd_async.epics.signal import epics_signal_r
 
 
@@ -74,7 +78,7 @@ class FSwitch(StandardReadable):
 
         super().__init__(name)
 
-    async def describe(self) -> Dict[str, DataKey]:
+    async def describe(self) -> dict[str, DataKey]:
         default_describe = await super().describe()
         return {
             FSwitch.NUM_LENSES_FIELD_NAME: DataKey(
@@ -83,7 +87,7 @@ class FSwitch(StandardReadable):
             **default_describe,
         }
 
-    async def read(self) -> Dict[str, Reading]:
+    async def read(self) -> dict[str, Reading]:
         result = await asyncio.gather(
             *(filter.get_value() for filter in self.filters.values())
         )

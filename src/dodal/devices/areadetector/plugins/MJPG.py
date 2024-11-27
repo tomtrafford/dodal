@@ -1,6 +1,7 @@
 import os
 import threading
 from abc import ABC, abstractmethod
+from io import BytesIO
 from pathlib import Path
 
 import requests
@@ -8,7 +9,6 @@ from ophyd import Component, Device, DeviceStatus, EpicsSignal, EpicsSignalRO, S
 from PIL import Image, ImageDraw
 
 from dodal.devices.oav.oav_parameters import OAVConfigParams
-from dodal.devices.oav.utils import save_thumbnail
 from dodal.log import LOGGER
 
 
@@ -50,9 +50,6 @@ class MJPG(Device, ABC):
 
         LOGGER.info(f"Saving image to {path}")
         image.save(path)
-
-        save_thumbnail(Path(path), image)
-
         self.last_saved_path.put(path)
 
     def trigger(self):
@@ -74,7 +71,7 @@ class MJPG(Device, ABC):
             try:
                 response = requests.get(url_str, stream=True)
                 response.raise_for_status()
-                with Image.open(response.raw) as image:
+                with Image.open(BytesIO(response.content)) as image:
                     self.post_processing(image)
                     st.set_finished()
             except requests.HTTPError as e:
@@ -90,11 +87,12 @@ class MJPG(Device, ABC):
 
 
 class SnapshotWithBeamCentre(MJPG):
-    """A child of MJPG which, when triggered, draws a crosshair at the beam centre in the
-    image and saves the image to disk."""
+    """A child of MJPG which, when triggered, draws an outlined crosshair at the beam
+    centre in the image and saves the image to disk."""
 
     CROSSHAIR_LENGTH_PX = 20
-    CROSSHAIR_COLOUR = "Blue"
+    CROSSHAIR_OUTLINE_COLOUR = "Black"
+    CROSSHAIR_FILL_COLOUR = "White"
 
     def post_processing(self, image: Image.Image):
         assert (
@@ -103,15 +101,38 @@ class SnapshotWithBeamCentre(MJPG):
         beam_x = self.oav_params.beam_centre_i
         beam_y = self.oav_params.beam_centre_j
 
+        SnapshotWithBeamCentre.draw_crosshair(image, beam_x, beam_y)
+
+        self._save_image(image)
+
+    @classmethod
+    def draw_crosshair(cls, image: Image.Image, beam_x: int, beam_y: int):
         draw = ImageDraw.Draw(image)
-        HALF_LEN = self.CROSSHAIR_LENGTH_PX / 2
+        OUTLINE_WIDTH = 1
+        HALF_LEN = cls.CROSSHAIR_LENGTH_PX / 2
+        draw.rectangle(
+            [
+                beam_x - OUTLINE_WIDTH,
+                beam_y - HALF_LEN - OUTLINE_WIDTH,
+                beam_x + OUTLINE_WIDTH,
+                beam_y + HALF_LEN + OUTLINE_WIDTH,
+            ],
+            fill=cls.CROSSHAIR_OUTLINE_COLOUR,
+        )
+        draw.rectangle(
+            [
+                beam_x - HALF_LEN - OUTLINE_WIDTH,
+                beam_y - OUTLINE_WIDTH,
+                beam_x + HALF_LEN + OUTLINE_WIDTH,
+                beam_y + OUTLINE_WIDTH,
+            ],
+            fill=cls.CROSSHAIR_OUTLINE_COLOUR,
+        )
         draw.line(
             ((beam_x, beam_y - HALF_LEN), (beam_x, beam_y + HALF_LEN)),
-            fill=self.CROSSHAIR_COLOUR,
+            fill=cls.CROSSHAIR_FILL_COLOUR,
         )
         draw.line(
             ((beam_x - HALF_LEN, beam_y), (beam_x + HALF_LEN, beam_y)),
-            fill=self.CROSSHAIR_COLOUR,
+            fill=cls.CROSSHAIR_FILL_COLOUR,
         )
-
-        self._save_image(image)

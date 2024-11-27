@@ -1,8 +1,6 @@
-from typing import Tuple
-
 import pytest
-from bluesky import RunEngine
 from bluesky import plan_stubs as bps
+from bluesky.run_engine import RunEngine
 from ophyd_async.core import DeviceCollector, observe_value, set_mock_value
 
 from dodal.devices.smargon import Smargon, StubPosition
@@ -15,7 +13,7 @@ async def smargon() -> Smargon:
     return smargon
 
 
-def set_smargon_pos(smargon: Smargon, pos: Tuple[float, float, float]):
+def set_smargon_pos(smargon: Smargon, pos: tuple[float, float, float]):
     set_mock_value(smargon.x.user_readback, pos[0])
     set_mock_value(smargon.y.user_readback, pos[1])
     set_mock_value(smargon.z.user_readback, pos[2])
